@@ -13,10 +13,10 @@
 #include "rclcpp/serialization.hpp"
 #include "rclcpp/serialized_message.hpp"
 
-
-int main(int argc, char* argv[]){
+sensor_msgs::msg::PointCloud2 get_pcl_from_rosbag() {
     rosbag2_storage::StorageOptions in_storage_options;
-    in_storage_options.uri = "/home/minakosm/turtle_track_data/track_data_19_11_2021/rosbag2_2021_11_19_09-48-35_autoX";
+    // in_storage_options.uri = "/home/minakosm/turtle_track_data/track_data_19_11_2021/rosbag2_2021_11_19_09-48-35_autoX";
+    in_storage_options.uri = "/media/panos/Kingston16G/Aristurtle_Flash/track_data_19_11_2021/rosbag2_2021_11_19_09-48-35_autoX";
     in_storage_options.storage_id = "sqlite3";
     in_storage_options.max_bagfile_size = 0;  // default
     in_storage_options.max_cache_size = 0;    // default
@@ -28,9 +28,7 @@ int main(int argc, char* argv[]){
     rosbag2_cpp::Reader reader(std::make_unique<rosbag2_cpp::readers::SequentialReader>());
     reader.open(in_storage_options, converter_options);
 
-
     std::shared_ptr<rosbag2_storage::SerializedBagMessage> bag_message;
-    sensor_msgs::msg::PointCloud2::SharedPtr pclMsg;
 
     while (reader.has_next()) {
         bag_message = reader.read_next();
@@ -40,17 +38,20 @@ int main(int argc, char* argv[]){
         if (bag_message->topic_name == "/ouster/rawPointcloud") {
             std::cout << "message" << std::endl;
             rclcpp::Serialization<sensor_msgs::msg::PointCloud2> serialization;
-            sensor_msgs::msg::PointCloud2::SharedPtr pcl;
+            sensor_msgs::msg::PointCloud2 pcl;
             rclcpp::SerializedMessage serialized_extracted_tf(*bag_message->serialized_data);
-            serialization.deserialize_message(&serialized_extracted_tf, pcl.get());
-            std::cout << "pcl: " << pcl->data.size() << std::endl;
+            serialization.deserialize_message(&serialized_extracted_tf, &pcl);
+            std::cout << "pcl: " << pcl.data.size() << std::endl;
 
-            pclMsg = pcl;
-            break;
+            return pcl;
         }
     }
+}
 
-  
-    transform_pointcloud(pclMsg);
+int main(int argc, char* argv[]) {
+
+    sensor_msgs::msg::PointCloud2 pclMsg = get_pcl_from_rosbag();
+    sensor_msgs::msg::PointCloud2::SharedPtr p(new sensor_msgs::msg::PointCloud2(pclMsg));
+    transform_pointcloud(p);
     return 0;
 }
