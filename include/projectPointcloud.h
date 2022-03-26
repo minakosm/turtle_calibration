@@ -49,19 +49,19 @@ private:
     Eigen::Matrix<double, 4, Eigen::Dynamic> lp;    // Homogenous lidar 3D-points
 
     void syncCallback(sensor_msgs::msg::PointCloud2::SharedPtr pclMsg, sensor_msgs::msg::Image::SharedPtr imgMsg); 
-    void offlineCallback(sensor_msgs::msg::PointCloud2::SharedPtr pclMsg);
 
 public:
+    void offlineCallback(sensor_msgs::msg::PointCloud2::SharedPtr pclMsg);
 
     projectPointcloud(int offline);
     virtual ~projectPointcloud(){}
 
     void initSubs();
     void initPubs();
-    void readIntrinsicParams(int cameraIndex);
     Eigen::MatrixXd calculateProjMat();
 
     void initOfflineProjection();
 };
 
-
+std::pair<Eigen::MatrixXd, Eigen::VectorXd> readIntrinsicParams(int cameraIndex);
+void transform_pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr pclMsg);

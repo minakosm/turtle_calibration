@@ -15,6 +15,12 @@ find_package(Eigen3 REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
+find_package(rosbag2_storage REQUIRED)
+find_package(rcutils REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(tf2_msgs REQUIRED)
+
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
                     ${OpenCV_INCLUDE_DIRS}
@@ -28,7 +34,7 @@ ament_target_dependencies(calibration rclcpp std_msgs sensor_msgs ament_index_cp
 
 add_executable(lidar_camera_project src/main.cpp)
 target_link_libraries(lidar_camera_project calibration)
-ament_target_dependencies(lidar_camera_project rclcpp)
+ament_target_dependencies(lidar_camera_project rclcpp rosbag2_cpp rosbag2_storage rcutils sensor_msgs)
 
 install(TARGETS lidar_camera_project 
         DESTINATION lib/${PROJECT_NAME})

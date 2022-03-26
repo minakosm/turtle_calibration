@@ -57,9 +57,12 @@ void projectPointcloud::initPubs() {
 
 }
 
-void projectPointcloud::readIntrinsicParams(int cameraIndex) {
+std::pair<Eigen::MatrixXd, Eigen::VectorXd> readIntrinsicParams(int cameraIndex) {
+    Eigen::MatrixXd intrinsic_K;  // 3x3 Camera Matrix
+    Eigen::VectorXd intrinsic_D;  // 1x5 Distortion Matrix
+
     std::string intrinsic_filepath = "/settings/camera_settings" + std::to_string(cameraIndex);
-    yaml_root = YAML::LoadFile(intrinsic_filepath);
+    auto yaml_root = YAML::LoadFile(intrinsic_filepath);
     
     for(YAML::const_iterator it=yaml_root.begin(); it!=yaml_root.end(); it++) {
         const std::string &key = it->first.as<std::string>();
@@ -84,6 +87,8 @@ void projectPointcloud::readIntrinsicParams(int cameraIndex) {
         }
         
     }
+
+    return std::make_pair(intrinsic_K, intrinsic_D);
 }
 
 Eigen::MatrixXd projectPointcloud::calculateProjMat() {
@@ -111,7 +116,9 @@ void projectPointcloud::syncCallback(sensor_msgs::msg::PointCloud2::SharedPtr pc
     RCLCPP_INFO(this->get_logger(), "\nPointCloud2 size = %u", pclMsg->width * pclMsg->height);
 
     for(int i=0; i<CAMERA_N; i++){
-        readIntrinsicParams(i);    
+        auto params = readIntrinsicParams(i);    
+        intrinsic_K = params.first;
+        intrinsic_D = params.second;
         proj_mat = calculateProjMat();
     }
 
@@ -151,6 +158,9 @@ void projectPointcloud::initOfflineProjection() {
 }
 
 void projectPointcloud::offlineCallback(const sensor_msgs::msg::PointCloud2::SharedPtr pclMsg){
+}
+
+void transform_pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr pclMsg){
     std::cout<<"InsideCallback"<<std::endl;
     uint8_t* ptr = pclMsg->data.data();
     Eigen::Array<bool, Eigen::Dynamic, 1> logic_expression;
@@ -159,13 +169,24 @@ void projectPointcloud::offlineCallback(const sensor_msgs::msg::PointCloud2::Sha
         std::string filename = "../images/image" + std::to_string(i) + ".jpg";
 
         cv::Mat img = cv::imread(filename);
-        if(img.empty()) {std::cout << "Error loading image" << i << std::endl; return;}
+        if(img.empty()) {
+            std::cout << "Error loading image" << i << std::endl; 
+            return;
+        }
         cv::Mat img_proj = cv::Mat::zeros(img.size(), img.type());
 
-        readIntrinsicParams(i);
-        cameraIndex++;
+        auto params = readIntrinsicParams(i);
+        auto intrinsic_K = params.first;
+        auto intrinsic_D = params.second;
+
+        // cameraIndex++;
         // proj_mat = calculateProjMat();
-        
+
+        Eigen::Matrix<double, 3, Eigen::Dynamic> px;  // Homogenous pixel points
+        Eigen::Matrix<double, 3, 4> R_t;              // 3x4 Transformation Matrix [R|t]
+        Eigen::Matrix<double, 3, 4> proj_mat;         // 3x4 Projection Matrix
+        Eigen::Matrix<double, 4, Eigen::Dynamic> lp;  // Homogenous lidar 3D-points
+
         if(TSIGGAN) {
         R_t << 1, 0 ,0, 0,
                0, 1, 0, 0,
