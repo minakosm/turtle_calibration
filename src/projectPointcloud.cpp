@@ -160,7 +160,7 @@ void projectPointcloud::initOfflineProjection() {
 void projectPointcloud::offlineCallback(const sensor_msgs::msg::PointCloud2::SharedPtr pclMsg){
 }
 
-void transform_pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr pclMsg){
+void transform_pointcloud(sensor_msgs::msg::PointCloud2::SharedPtr pclMsg){
     std::cout<<"InsideCallback"<<std::endl;
     uint8_t* ptr = pclMsg->data.data();
     Eigen::Array<bool, Eigen::Dynamic, 1> logic_expression;
