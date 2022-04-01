@@ -185,14 +185,9 @@ void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
         img_proj = img;
 
         auto params = readIntrinsicParams(i);
-        std::cout<<"Returned to transform_pointcloud"<<std::endl;
         Eigen::Matrix<float, 3, 3> intrinsic_K = params.first;
         Eigen::Matrix<float, 1, 5> intrinsic_D = params.second;
 
-        std::cout<<"intrinsic_K = "<<intrinsic_K<<std::endl;
-        std::cout<<"intrinsic_D = "<<intrinsic_D<<std::endl;
-
-        std::cout<<"image channels = "<<img.channels()<<std::endl;
         // cameraIndex++;
         // proj_mat = calculateProjMat();
 
@@ -203,7 +198,7 @@ void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
         Eigen::Matrix<bool, Eigen::Dynamic, 1> logic_expression ;
 
         if(TSIGGAN) {
-        R_t << 0, -1 ,0, 15,
+        R_t << 0, -1 ,0, 10,
                0, 0, -1, 10,
                -1, 0, 1, 10;
 
@@ -232,7 +227,6 @@ void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
 
         px.resize(proj_mat.rows(), lp.cols());
         px = proj_mat * lp;
-
 
         std::cout<< "px.cols() = "<< px.cols() << std::endl;
         logic_expression.resize(px.cols());
