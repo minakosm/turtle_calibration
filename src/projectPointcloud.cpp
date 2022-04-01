@@ -11,13 +11,15 @@
 #include "opencv2/opencv.hpp"
 #include "opencv2/core/eigen.hpp"
 
+
+#define PI 3.14159
 #define CALIBRATION_FILENAME "extrinsic_calibration.yaml"
 #define OFFLINE 1   // Boolean Offline Mode
 #define TSIGGAN 1   // Boolean Tsigganies
 
-#ifndef CAMERA_N
+
 #define CAMERA_N 2  // Number of Cameras
-#endif
+
 
 // constructor
 projectPointcloud::projectPointcloud(int offline) : rclcpp::Node("LidarImage"){
@@ -57,11 +59,11 @@ void projectPointcloud::initPubs() {
 
 }
 
-std::pair<Eigen::MatrixXd, Eigen::VectorXd> readIntrinsicParams(int cameraIndex) {
-    Eigen::MatrixXd intrinsic_K;  // 3x3 Camera Matrix
-    Eigen::VectorXd intrinsic_D;  // 1x5 Distortion Matrix
+    std::pair<Eigen::Matrix<float, 3, 3>, Eigen::Matrix<float, 1, 5>> readIntrinsicParams(int cameraIndex) {
+    Eigen::Matrix<float, 3, 3> intrinsic_K;  // 3x3 Camera Matrix
+    Eigen::Matrix<float, 1, 5> intrinsic_D;  // 1x5 Distortion Matrix
 
-    std::string intrinsic_filepath = "/settings/camera_settings" + std::to_string(cameraIndex);
+    std::string intrinsic_filepath = "/home/minakosm/turtle_ws/src/turtle_calibration/settings/camera_settings" + std::to_string(cameraIndex) + ".yaml";
     auto yaml_root = YAML::LoadFile(intrinsic_filepath);
     
     for(YAML::const_iterator it=yaml_root.begin(); it!=yaml_root.end(); it++) {
@@ -71,7 +73,10 @@ std::pair<Eigen::MatrixXd, Eigen::VectorXd> readIntrinsicParams(int cameraIndex)
         int rows = attributes["rows"].as<int>();
         int cols = attributes["cols"].as<int>();
 
-        const std::vector<double> data = attributes["data"].as<std::vector<double>>();
+        std::cout << "rows" << rows << std::endl;
+        std::cout << "cols" << cols << std::endl;
+
+        const std::vector<float> data = attributes["data"].as<std::vector<float>>();
 
         for(int i=0; i<rows; i++){
             for(int j=0; j<cols; j++){
@@ -87,20 +92,20 @@ std::pair<Eigen::MatrixXd, Eigen::VectorXd> readIntrinsicParams(int cameraIndex)
         }
         
     }
-
+    std::cout<<"Returning to transform_pointcloud"<<std::endl;
     return std::make_pair(intrinsic_K, intrinsic_D);
 }
 
-Eigen::MatrixXd projectPointcloud::calculateProjMat() {
+Eigen::MatrixXf projectPointcloud::calculateProjMat() {
     yaml_root = YAML::LoadFile(CALIBRATION_FILENAME);
 
-    std::vector<double> tempVector = yaml_root["Transformation_matrix"].as<std::vector<double>>();
-    R_t = Eigen::Map<Eigen::Matrix<double, 3, 4>>(tempVector.data());
+    std::vector<float> tempVector = yaml_root["Transformation_matrix"].as<std::vector<float>>();
+    R_t = Eigen::Map<Eigen::Matrix<float, 3, 4>>(tempVector.data());
 
     // Eigen::Map<Eigen::MatrixXf> R_t(tempMat.data());
-    // R_t = yaml_root["Transformation_matrix"].as<Eigen::MatrixXd>();
+    // R_t = yaml_root["Transformation_matrix"].as<Eigen::MatrixXf>();
     
-    Eigen::MatrixXd proj_mat = intrinsic_K * R_t;
+    Eigen::MatrixXf proj_mat = intrinsic_K * R_t;
 
     return proj_mat;
 }
@@ -160,64 +165,98 @@ void projectPointcloud::initOfflineProjection() {
 void projectPointcloud::offlineCallback(const sensor_msgs::msg::PointCloud2::SharedPtr pclMsg){
 }
 
-void transform_pointcloud(sensor_msgs::msg::PointCloud2::SharedPtr pclMsg){
+void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
     std::cout<<"InsideCallback"<<std::endl;
-    uint8_t* ptr = pclMsg->data.data();
-    Eigen::Array<bool, Eigen::Dynamic, 1> logic_expression;
+    uint8_t* ptr = pclMsg.data.data();
+
 
     for(int i=0; i<CAMERA_N; i++){
-        std::string filename = "../images/image" + std::to_string(i) + ".jpg";
+        std::string filename = "/home/minakosm/turtle_ws/src/turtle_calibration/images/image" + std::to_string(i) + ".jpg";
 
         cv::Mat img = cv::imread(filename);
         if(img.empty()) {
             std::cout << "Error loading image" << i << std::endl; 
             return;
         }
+        cv::imshow("camera_image", img);
+        cv::waitKey(0);
         cv::Mat img_proj = cv::Mat::zeros(img.size(), img.type());
 
-        auto params = readIntrinsicParams(i);
-        auto intrinsic_K = params.first;
-        auto intrinsic_D = params.second;
+        img_proj = img;
 
+        auto params = readIntrinsicParams(i);
+        std::cout<<"Returned to transform_pointcloud"<<std::endl;
+        Eigen::Matrix<float, 3, 3> intrinsic_K = params.first;
+        Eigen::Matrix<float, 1, 5> intrinsic_D = params.second;
+
+        std::cout<<"intrinsic_K = "<<intrinsic_K<<std::endl;
+        std::cout<<"intrinsic_D = "<<intrinsic_D<<std::endl;
+
+        std::cout<<"image channels = "<<img.channels()<<std::endl;
         // cameraIndex++;
         // proj_mat = calculateProjMat();
 
-        Eigen::Matrix<double, 3, Eigen::Dynamic> px;  // Homogenous pixel points
-        Eigen::Matrix<double, 3, 4> R_t;              // 3x4 Transformation Matrix [R|t]
-        Eigen::Matrix<double, 3, 4> proj_mat;         // 3x4 Projection Matrix
-        Eigen::Matrix<double, 4, Eigen::Dynamic> lp;  // Homogenous lidar 3D-points
+        Eigen::Matrix3Xf px;  // Homogenous pixel points
+        Eigen::Matrix<float, 3, 4> R_t;              // 3x4 Transformation Matrix [R|t]
+        Eigen::Matrix<float, 3, 4> proj_mat;         // 3x4 Projection Matrix
+        Eigen::Matrix4Xf lp;  // Homogenous lidar 3D-points
+        Eigen::Matrix<bool, Eigen::Dynamic, 1> logic_expression ;
 
         if(TSIGGAN) {
-        R_t << 1, 0 ,0, 0,
-               0, 1, 0, 0,
-               0, 0, 1, 0;
+        R_t << 0, -1 ,0, 15,
+               0, 0, -1, 10,
+               -1, 0, 1, 10;
 
         proj_mat = intrinsic_K * R_t;
         }
 
-        for(int i=0; i=pclMsg->data.size(); i++){
-            lp(0,i) = *((float*)(ptr + i*pclMsg->point_step));
-            lp(1,i) = *((float*)(ptr + i*pclMsg->point_step + 4));
-            lp(2,i) = *((float*)(ptr + i*pclMsg->point_step + 8));  
-            lp(3,i) = 1;
+        std::cout <<"R_t =  "<< R_t <<std::endl;
+        std::cout <<"proj_mat = " << proj_mat << std::endl;
 
-            px = proj_mat * lp;
+        lp.resize(4, pclMsg.data.size()/pclMsg.point_step);
 
-            logic_expression(i) = px(0,i) < img.cols &&
-                                    px(0,i) > 0 &&
-                                    px(1,i) < img.rows &&
-                                    px(1,i) > 0;
+        for(int j=0; j < pclMsg.data.size()/pclMsg.point_step; j++){
+            
+
+            lp(2,j) = /*((float*)(ptr + j*pclMsg.point_step + 8))*/ 1 ;
+            lp(0,j) = *((float*)(ptr + j*pclMsg.point_step)) / lp(2,j);
+            lp(1,j) = *((float*)(ptr + j*pclMsg.point_step + 4)) / lp(2,j) ;  
+            lp(3,j) = 1/ lp(2,j);
+
+            std::cout<<" x"<<j<<" = "<<lp(0,j);
+            std::cout<<" y"<<j<<" = "<<lp(1,j);
+            std::cout<<" z"<<j<<" = "<<lp(2,j)<<std::endl;
+
+            // px = proj_mat * tmp;
         }
 
-        for(unsigned int i=0; i<logic_expression.size(); i++){
-            if(logic_expression(i)){
-                for(int c=0; c<img.channels(); c++){
-                    img_proj.at<cv::Vec3b>(px(1,i),px(0,i))[c] = 255/(int)lp(2,i);
-                }
+        px.resize(proj_mat.rows(), lp.cols());
+        px = proj_mat * lp;
+
+
+        std::cout<< "px.cols() = "<< px.cols() << std::endl;
+        logic_expression.resize(px.cols());
+        for(int l=0; l<px.cols(); l++){
+            
+            px(0,l) = px(0,l)/100;
+            px(1,l) = px(1,l)/100;
+            logic_expression(l) = px(0,l) < img.cols &&
+                                  px(0,l) > 0 &&
+                                  px(1,l) < img.rows &&
+                                  px(1,l) > 0;
+        }
+
+        for(int k=0; k<logic_expression.size(); k++){
+            if(logic_expression(k)){
+                std::cout <<"px(1,"<<k<<") = " <<px(1,k) << " px(0,"<<k<<") = " << px(0,k) << std::endl;
+                img_proj.at<cv::Vec3b>(int(px(1,k)),int(px(0,k))) = cv::viz::Color::red();
+                std::cout<<img_proj.at<cv::Vec3b>(px(1,k),px(0,k))<<std::endl;
             }
         }
+        
+        std::cout<< "image_rows = "<<img.rows<<std::endl;
+        std::cout<< "image_cols = "<<img.cols<<std::endl;
 
-        cv::imshow("camera_image", img);
         cv::imshow("lidar_image", img_proj);
         cv::waitKey(0);
 

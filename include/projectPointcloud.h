@@ -38,15 +38,15 @@ private:
     sensor_msgs::msg::PointCloud2 pointcloudMsg;
 
     YAML::Node yaml_root;
-    Eigen::MatrixXd intrinsic_K;    // 3x3 Camera Matrix    
-    Eigen::VectorXd intrinsic_D;    // 1x5 Distortion Matrix
+    Eigen::Matrix<float, 3, 3> intrinsic_K;    // 3x3 Camera Matrix    
+    Eigen::Matrix<float, 1, 5> intrinsic_D;    // 1x5 Distortion Matrix
 
     int cameraIndex;
 
-    Eigen::Matrix<double, 3, Eigen::Dynamic> px;    // Homogenous pixel points
-    Eigen::Matrix<double, 3, 4> R_t;    // 3x4 Transformation Matrix [R|t]
-    Eigen::Matrix<double, 3, 4> proj_mat;   // 3x4 Projection Matrix
-    Eigen::Matrix<double, 4, Eigen::Dynamic> lp;    // Homogenous lidar 3D-points
+    Eigen::Matrix<float, 3, Eigen::Dynamic> px;    // Homogenous pixel points
+    Eigen::Matrix<float, 3, 4> R_t;    // 3x4 Transformation Matrix [R|t]
+    Eigen::Matrix<float, 3, 4> proj_mat;   // 3x4 Projection Matrix
+    Eigen::Matrix<float, 4, Eigen::Dynamic> lp;    // Homogenous lidar 3D-points
 
     void syncCallback(sensor_msgs::msg::PointCloud2::SharedPtr pclMsg, sensor_msgs::msg::Image::SharedPtr imgMsg); 
 
@@ -58,10 +58,10 @@ public:
 
     void initSubs();
     void initPubs();
-    Eigen::MatrixXd calculateProjMat();
+    Eigen::MatrixXf calculateProjMat();
 
     void initOfflineProjection();
 };
 
-std::pair<Eigen::MatrixXd, Eigen::VectorXd> readIntrinsicParams(int cameraIndex);
-void transform_pointcloud(const sensor_msgs::msg::PointCloud2::SharedPtr pclMsg);
+std::pair<Eigen::Matrix<float, 3, 3>, Eigen::Matrix<float, 1, 5>> readIntrinsicParams(int cameraIndex);
+void transform_pointcloud(const sensor_msgs::msg::PointCloud2 pclMsg);
