@@ -1,7 +1,6 @@
 #include "projectPointcloud.h"
 #include <memory>
 
-#include "rclcpp/rclcpp.hpp"
 #include "ament_index_cpp/get_package_share_directory.hpp" 
 
 #include "rosbag2_cpp/reader.hpp"
@@ -9,9 +8,14 @@
 #include "rosbag2_cpp/writer.hpp"
 #include "rosbag2_cpp/writers/sequential_writer.hpp"
 #include "rosbag2_storage/serialized_bag_message.hpp"
-#include "rclcpp/rclcpp.hpp"
+
 #include "rclcpp/serialization.hpp"
 #include "rclcpp/serialized_message.hpp"
+#include "sensor_msgs/msg/point_cloud2.hpp"
+
+#ifndef PI
+#define PI 3.14159
+#endif
 
 sensor_msgs::msg::PointCloud2 get_pcl_from_rosbag() {
     rosbag2_storage::StorageOptions in_storage_options;
@@ -49,7 +53,6 @@ sensor_msgs::msg::PointCloud2 get_pcl_from_rosbag() {
 }
 
 int main(int argc, char* argv[]) {
-
     sensor_msgs::msg::PointCloud2 pclMsg = get_pcl_from_rosbag();
     std::cout <<"pcl point step: "<<pclMsg.point_step<<std::endl;
     // sensor_msgs::msg::PointCloud2::SharedPtr p(new sensor_msgs::msg::PointCloud2(pclMsg));

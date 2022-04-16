@@ -11,55 +11,35 @@
 #include "opencv2/opencv.hpp"
 #include "opencv2/core/eigen.hpp"
 
-
+#ifndef PI
 #define PI 3.14159
+#endif
+
 #define CALIBRATION_FILENAME "extrinsic_calibration.yaml"
 #define OFFLINE 1   // Boolean Offline Mode
-#define TSIGGAN 1   // Boolean Tsigganies
+#define TSIGGAN 0   // Boolean Tsigganies
 
 
 #define CAMERA_N 2  // Number of Cameras
 
 
-// constructor
-projectPointcloud::projectPointcloud(int offline) : rclcpp::Node("LidarImage"){
-    rclcpp::QoS qos(10);
-    qos.reliability(RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT);
-    offlineSub = this->create_subscription<sensor_msgs::msg::PointCloud2>("ouster/rawPointcloud", qos, std::bind(&projectPointcloud::offlineCallback, this, std::placeholders::_1));
-    std::cout<<"InsideConstructor"<<std::endl;
-    if(offline){
-        std::cout<<"InsideConstructor offline1"<<std::endl;
-        initOfflineProjection();
-        RCLCPP_INFO(this->get_logger(), "Offline Subscriber initiated");
-    }
+float roll, pitch, yaw;
 
-    initPubs();
-    initSubs();
+Eigen::Matrix<float, 3, 3> intrinsic_K;         // Intrinsic Camera Matrix 
+Eigen::Matrix<float, 1, 5> intrinsic_D;         // Intrinsic Distortion Matrix
 
-    RCLCPP_INFO(this->get_logger(), "Subscribers and Publishers initiated");
+Eigen::Matrix4Xf lp;                            // 4xN Homogenous lidar 3D-points
+Eigen::Matrix4Xf cp;                            // Homogenous camera points
+Eigen::Matrix4f T_mat;                          // 4x4 Transformation Matrix 
+Eigen::Matrix<float, 3, 4> proj_mat;            // 3x4 Projection Matrix
+Eigen::Matrix<float, 3, Eigen::Dynamic> px;     // 3xN Pixel Points
 
-};
+Eigen::Matrix<bool, Eigen::Dynamic, 1> logic_expression ;
+// Eigen::VectorXf intensities;
+Eigen::Matrix<float, 4, 4> camFrame;
 
-void projectPointcloud::initSubs() {
 
-    rmw_qos_profile_t qos_profile = rmw_qos_profile_sensor_data; 
-
-    this->pclSubscriber = new message_filters::Subscriber<sensor_msgs::msg::PointCloud2>(this, "/lidar/groundFiltered", qos_profile);
-    this->imgSubscriber = new message_filters::Subscriber<sensor_msgs::msg::Image>(this, "/camera/imageRaw", qos_profile);
-
-    this->sync = new message_filters::Synchronizer<approximatePolicy>(approximatePolicy(10), *pclSubscriber, *imgSubscriber);
-    this->sync->registerCallback(&projectPointcloud::syncCallback, this);
-}
-
-void projectPointcloud::initPubs() {
-
-    rclcpp::SensorDataQoS qos;
-
-    this->projectionPublisher = this->create_publisher<sensor_msgs::msg::Image>("/calibration/projectedImage", qos);
-
-}
-
-    std::pair<Eigen::Matrix<float, 3, 3>, Eigen::Matrix<float, 1, 5>> readIntrinsicParams(int cameraIndex) {
+std::pair<Eigen::Matrix<float, 3, 3>, Eigen::Matrix<float, 1, 5>> readIntrinsicParams(int cameraIndex) {
     Eigen::Matrix<float, 3, 3> intrinsic_K;  // 3x3 Camera Matrix
     Eigen::Matrix<float, 1, 5> intrinsic_D;  // 1x5 Distortion Matrix
 
@@ -72,10 +52,6 @@ void projectPointcloud::initPubs() {
         YAML::Node attributes = it->second;
         int rows = attributes["rows"].as<int>();
         int cols = attributes["cols"].as<int>();
-
-        std::cout << "rows" << rows << std::endl;
-        std::cout << "cols" << cols << std::endl;
-
         const std::vector<float> data = attributes["data"].as<std::vector<float>>();
 
         for(int i=0; i<rows; i++){
@@ -92,82 +68,44 @@ void projectPointcloud::initPubs() {
         }
         
     }
-    std::cout<<"Returning to transform_pointcloud"<<std::endl;
     return std::make_pair(intrinsic_K, intrinsic_D);
 }
 
-Eigen::MatrixXf projectPointcloud::calculateProjMat() {
-    yaml_root = YAML::LoadFile(CALIBRATION_FILENAME);
+Eigen::Matrix4f calculateTransformMat(float yaw, float pitch, float roll, int cameraIndex){
+    Eigen::Vector3f t;
+    Eigen::Matrix3f R;
+    Eigen::Matrix4f R_t;
+    Eigen::Matrix3f rot;
 
-    std::vector<float> tempVector = yaml_root["Transformation_matrix"].as<std::vector<float>>();
-    R_t = Eigen::Map<Eigen::Matrix<float, 3, 4>>(tempVector.data());
+        // rot<<0, 0, -1,
+        //      1, 0, 0,
+        //      0, 1, 0;
 
-    // Eigen::Map<Eigen::MatrixXf> R_t(tempMat.data());
-    // R_t = yaml_root["Transformation_matrix"].as<Eigen::MatrixXf>();
+
+    R = Eigen::AngleAxisf(std::pow(-1, cameraIndex)*yaw,
+                    Eigen::Vector3f::UnitZ())
+        *Eigen::AngleAxisf(pitch,
+                   Eigen::Vector3f::UnitY())
+        *Eigen::AngleAxisf(roll,
+                    Eigen::Vector3f::UnitX());
     
-    Eigen::MatrixXf proj_mat = intrinsic_K * R_t;
+    // R = R*rot;
+    std::cout<<"Rotation Matrix R = "<<R<<std::endl;
 
-    return proj_mat;
-}
+    t << -0.031, 0, -0.25;
 
-void projectPointcloud::syncCallback(sensor_msgs::msg::PointCloud2::SharedPtr pclMsg, sensor_msgs::msg::Image::SharedPtr imgMsg) {
-/**
- * TODO : 1) Take data from subscribers 
- *        2) Take CameraMatrix and [R|t]
- *        3) Transform points
- *        4) projectPoints - Publish image
- */
-    auto a1 = std::chrono::steady_clock::now();
-    RCLCPP_INFO(this->get_logger(), "\nPointCloud2 size = %u", pclMsg->width * pclMsg->height);
+    R_t <<R,t,Eigen::MatrixXf::Zero(1,R_t.cols()-1),1;
+    std::cout<<"TRANSFORMATION MATRIX \n =" << R_t << std::endl;
 
-    for(int i=0; i<CAMERA_N; i++){
-        auto params = readIntrinsicParams(i);    
-        intrinsic_K = params.first;
-        intrinsic_D = params.second;
-        proj_mat = calculateProjMat();
-    }
-
-    auto a2 = std::chrono::steady_clock::now();
-    RCLCPP_INFO(this->get_logger(), "Total syncCallback time in us: %lu", std::chrono::duration_cast<std::chrono::microseconds>(a2 - a1).count());
-}
-
-void projectPointcloud::initOfflineProjection() {
-
-    pointcloudMsg.header.frame_id = "os1";
-    pointcloudMsg.is_bigendian = false;
-    pointcloudMsg.is_dense = true;
-    pointcloudMsg.point_step = 12;
-    pointcloudMsg.fields.resize(3);
-
-    pointcloudMsg.fields[0].name = "x";
-    pointcloudMsg.fields[0].offset = 0;
-    pointcloudMsg.fields[0].datatype = 7;
-    pointcloudMsg.fields[0].count = 1;
-
-    pointcloudMsg.fields[1].name = "y";
-    pointcloudMsg.fields[1].offset = 4;
-    pointcloudMsg.fields[1].datatype = 7;
-    pointcloudMsg.fields[1].count = 1;
-
-    pointcloudMsg.fields[2].name = "z";
-    pointcloudMsg.fields[2].offset = 8;
-    pointcloudMsg.fields[2].datatype = 7;
-    pointcloudMsg.fields[2].count = 1;
-
-    pointcloudMsg.fields[3].name = "intensity";
-    pointcloudMsg.fields[3].offset = 12;
-    pointcloudMsg.fields[3].datatype = 4;
-    pointcloudMsg.fields[3].count = 1;
-
-    cameraIndex = 0;
-}
-
-void projectPointcloud::offlineCallback(const sensor_msgs::msg::PointCloud2::SharedPtr pclMsg){
+    return R_t;
+    
 }
 
 void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
-    std::cout<<"InsideCallback"<<std::endl;
     uint8_t* ptr = pclMsg.data.data();
+    yaw = 16*PI/180.0;
+    pitch = 14*PI/180.0;
+    roll = 0.0;
 
 
     for(int i=0; i<CAMERA_N; i++){
@@ -180,78 +118,141 @@ void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
         }
         cv::imshow("camera_image", img);
         cv::waitKey(0);
-        cv::Mat img_proj = cv::Mat::zeros(img.size(), img.type());
+        cv::Mat img_cpy;
+        cv::Mat img_proj_resized;
+        int img_width_resized = 2560;
+        int img_height_resized = 2048;
 
-        img_proj = img;
+        img_cpy = img;
+        cv::resize(img, img_proj_resized, cv::Size(img_width_resized, img_height_resized), cv::INTER_LINEAR);
 
         auto params = readIntrinsicParams(i);
-        Eigen::Matrix<float, 3, 3> intrinsic_K = params.first;
-        Eigen::Matrix<float, 1, 5> intrinsic_D = params.second;
+        intrinsic_K = params.first;
+        intrinsic_D = params.second;
 
-        // cameraIndex++;
-        // proj_mat = calculateProjMat();
+        std::cout<<"Camera Matrix = "<<intrinsic_K<<std::endl;
+        T_mat = calculateTransformMat(yaw, pitch, roll, i);
 
-        Eigen::Matrix3Xf px;  // Homogenous pixel points
-        Eigen::Matrix<float, 3, 4> R_t;              // 3x4 Transformation Matrix [R|t]
-        Eigen::Matrix<float, 3, 4> proj_mat;         // 3x4 Projection Matrix
-        Eigen::Matrix4Xf lp;  // Homogenous lidar 3D-points
-        Eigen::Matrix<bool, Eigen::Dynamic, 1> logic_expression ;
-
-        if(TSIGGAN) {
-        R_t << 0, -1 ,0, 10,
-               0, 0, -1, 10,
-               -1, 0, 1, 10;
-
-        proj_mat = intrinsic_K * R_t;
-        }
-
-        std::cout <<"R_t =  "<< R_t <<std::endl;
-        std::cout <<"proj_mat = " << proj_mat << std::endl;
+        std::cout <<"T_mat =  "<< T_mat <<std::endl;
+        // std::cout <<"proj_mat = " << proj_mat << std::endl;
 
         lp.resize(4, pclMsg.data.size()/pclMsg.point_step);
+        // intensities.resize(pclMsg.data.size()/pclMsg.point_step);
 
         for(int j=0; j < pclMsg.data.size()/pclMsg.point_step; j++){
-            
 
-            lp(2,j) = /*((float*)(ptr + j*pclMsg.point_step + 8))*/ 1 ;
-            lp(0,j) = *((float*)(ptr + j*pclMsg.point_step)) / lp(2,j);
-            lp(1,j) = *((float*)(ptr + j*pclMsg.point_step + 4)) / lp(2,j) ;  
-            lp(3,j) = 1/ lp(2,j);
+            lp(0,j) = *((float*)(ptr + j*pclMsg.point_step));
+            lp(1,j) = *((float*)(ptr + j*pclMsg.point_step + 4));
+            lp(2,j) = *((float*)(ptr + j*pclMsg.point_step + 8)); 
+            lp(3,j) = 1;
 
-            std::cout<<" x"<<j<<" = "<<lp(0,j);
-            std::cout<<" y"<<j<<" = "<<lp(1,j);
-            std::cout<<" z"<<j<<" = "<<lp(2,j)<<std::endl;
+            // intensities(j) = *((float*)(ptr + j*pclMsg.point_step + 12)); 
+
+            // std::cout<<" x"<<j<<" = "<<lp(0,j);
+            // std::cout<<" y"<<j<<" = "<<lp(1,j);
+            // std::cout<<" z"<<j<<" = "<<lp(2,j)<<std::endl;
 
             // px = proj_mat * tmp;
         }
 
-        px.resize(proj_mat.rows(), lp.cols());
-        px = proj_mat * lp;
+        cp.resize(T_mat.rows(), lp.cols());
 
-        std::cout<< "px.cols() = "<< px.cols() << std::endl;
+        // cp = T_mat * lp;
+        std::cout<< "DEBUG PX"<<std::endl;
+
+        // for(int i=0; i< cp.cols(); i++){
+            // std::cout<<"cp(0, "<<i<<") = "<<cp(0,i)<<std::endl;
+            // std::cout<<"cp(1, "<<i<<") = "<<cp(1,i)<<std::endl;
+            // std::cout<<"cp(2, "<<i<<") = "<<cp(2,i)<<std::endl;
+            // std::cout<<"cp(3, "<<i<<") = "<<cp(3,i)<<std::endl;
+
+        // }
+        
+        px.resize(3, cp.cols());
+        std::cout<<"PROJ MAT DEBUG 1" <<std::endl;
+        Eigen::Matrix<float, 4, 4> rot;
+        rot<<0, -1, 0, 0,
+             0, 0, -1, 0,
+             1, 0, 0, 0,
+             0, 0, 0, 1;
+
+        Eigen::Matrix<float, 3, 4> intrinsic;
+        intrinsic << intrinsic_K, Eigen::Vector3f::Zero();
+        cp = rot*T_mat.inverse()*lp ;
+        std::cout<<"PROJ MAT DEBUG 2" <<std::endl;
+
+        px = intrinsic * cp ;
+        std::cout <<"Intrinsic = "<< intrinsic <<std::endl;
+        for(int i=0; i<px.cols(); i++){
+            px(0,i) = px(0,i)/px(2,i) ;
+            px(1,i) = px(1,i)/px(2,i) ;
+
+            // std::cout<<"px(0," <<i<<") =" <<px(0,i)<<std::endl;
+            // std::cout<<"px(1," <<i<<") =" <<px(1,i)<<std::endl;
+            
+        }
+        std::cout<<"PROJ MAT DEBUG 3 "<<px.cols() <<std::endl;
+        
         logic_expression.resize(px.cols());
         for(int l=0; l<px.cols(); l++){
             
-            px(0,l) = px(0,l)/100;
-            px(1,l) = px(1,l)/100;
-            logic_expression(l) = px(0,l) < img.cols &&
+            logic_expression(l) = px(0,l) < img_proj_resized.cols &&
                                   px(0,l) > 0 &&
-                                  px(1,l) < img.rows &&
+                                  px(1,l) < img_proj_resized.rows &&
                                   px(1,l) > 0;
         }
+        std::cout<<logic_expression.count() <<std::endl;
 
+        std::vector<cv::Point3f> obj_points;
+        // std::cout <<"logic_expression = "<<logic_expression<<std::endl;
         for(int k=0; k<logic_expression.size(); k++){
             if(logic_expression(k)){
-                std::cout <<"px(1,"<<k<<") = " <<px(1,k) << " px(0,"<<k<<") = " << px(0,k) << std::endl;
-                img_proj.at<cv::Vec3b>(int(px(1,k)),int(px(0,k))) = cv::viz::Color::red();
-                std::cout<<img_proj.at<cv::Vec3b>(px(1,k),px(0,k))<<std::endl;
+                obj_points.push_back(cv::Point3f(lp(0,k), lp(1,k), lp(2,k)));
+                // std::cout <<"px(1,"<<k<<") = " <<proj_p(1,k) << " proj_p(0,"<<k<<") = " << proj_p(0,k) << std::endl;
+                img_proj_resized.at<cv::Vec3b>(int(px(1,k)),int(px(0,k))) = cv::viz::Color::red();
+                img_proj_resized.at<cv::Vec3b>(int(px(1,k)+1),int(px(0,k))) = cv::viz::Color::red();
+                img_proj_resized.at<cv::Vec3b>(int(px(1,k)),int(px(0,k)+1)) = cv::viz::Color::red();
+                img_proj_resized.at<cv::Vec3b>(int(px(1,k)+1),int(px(0,k)+1)) = cv::viz::Color::red();
+
+                
             }
         }
         
-        std::cout<< "image_rows = "<<img.rows<<std::endl;
-        std::cout<< "image_cols = "<<img.cols<<std::endl;
+        Eigen::MatrixXf test;
+        cv::Mat testCv;
+        cv::Vec3f rvec;
+        cv::Vec3f tvec = (-0.031, 0, -0.25);
+        cv::Mat camMat;
+        cv::Mat distMat;
+        cv::Mat imgPoints;
+        test = (rot * T_mat.inverse());
+        test.conservativeResize(3,3);
 
-        cv::imshow("lidar_image", img_proj);
+        cv::eigen2cv(test ,testCv);
+        
+        cv::Rodrigues(testCv, rvec);
+
+        cv::eigen2cv(intrinsic_K, camMat);
+        cv::eigen2cv(intrinsic_D, distMat);
+
+
+        cv::projectPoints(obj_points, rvec, tvec, camMat, distMat, imgPoints);
+        
+        // for(int k=0; k<imgPoints.size(); k++){
+        //         img_proj_resized.at<cv::Point2f>(imgPoints(k)) = cv::viz::Color::red();
+        //         img_proj_resized.at<cv::Point2f>(int(px(1,k)+1),int(px(0,k))) = cv::viz::Color::red();
+        //         img_proj_resized.at<cv::Point2f>(int(px(1,k)),int(px(0,k)+1)) = cv::viz::Color::red();
+        //         img_proj_resized.at<cv::Point2f>(int(px(1,k)+1),int(px(0,k)+1)) = cv::viz::Color::red();
+        // }
+
+        std::cout<< "image_rows / img_proj_resized_rows = "<<img_cpy.rows/img_proj_resized.rows<<std::endl;
+        std::cout<< "image_cols / img_proj_resized_cols = "<<img_cpy.cols/img_proj_resized.cols<<std::endl;
+
+        cv::Mat img_downscaled;
+        cv::resize(img_proj_resized, img_downscaled, cv::Size(img.cols, img.rows), cv::INTER_LINEAR);
+        cv::imshow("downscaled",img_downscaled);
+        cv::imwrite("test.jpg", img_proj_resized);
+
         cv::waitKey(0);
 
     }
