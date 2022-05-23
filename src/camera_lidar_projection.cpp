@@ -295,11 +295,21 @@ void image_processing(std::string image_filename,Eigen::MatrixXf pixel_points){;
     std::vector<cv::Point2f> px(pixel_points.cols());
 
     for(int i=0; i<px.size(); i++){
-        px[i].x = pixel_points(0,i);
-        px[i].y = pixel_points(1,i);
+        px[i].x = pixel_points(1,i);
+        px[i].y = pixel_points(0,i);
 
         if(px[i].inside(boundaries)){
-            img.at<cv::viz::Color>(px[i].y, px[i].y) = cv::viz::Color::red();
+            img.at<cv::viz::Color>(px[i].y, px[i].x) = cv::viz::Color::red();
+            for(int m=1; m<4; m++){
+                    for(int n=1; n<4; n++){
+                        if(px[i].x+m+n<img.cols && px[i].y+m+n<img.rows){
+                            img.at<cv::viz::Color>(px[i].y, px[i].x+n) = cv::viz::Color::red();
+                            img.at<cv::viz::Color>(px[i].y+n, px[i].x) = cv::viz::Color::red();
+                            img.at<cv::viz::Color>(px[i].y+n, px[i].x+m) = cv::viz::Color::red();
+                            img.at<cv::viz::Color>(px[i].y+m, px[i].x+n) = cv::viz::Color::red();
+                        }
+                        }
+                    }
         }
     }
 
@@ -308,7 +318,7 @@ void image_processing(std::string image_filename,Eigen::MatrixXf pixel_points){;
     
     cv::waitKey(0);
     std::cout<<"Saving image..."<<std::endl;
-    cv::imwrite("3D projection",img);
+    cv::imwrite("3D projection.jpg",img);
     
 }
 
@@ -329,6 +339,13 @@ int main(int argc, char* argv[]){
 
         auto pixel_points = get_pixel_points(camera_points, intrinsic_params.first);       
 
+        for(int i=0; i<pixel_points.size(); i++){
+            std::cout<<"px[ 0, "<<i<<"] = "<<pixel_points(0,i)<<std::endl;
+            std::cout<<"------------"<<std::endl;
+
+            std::cout<<"px[ 1, "<<i<<"] = "<<pixel_points(1,i)<<std::endl;
+            std::cout<<"------------"<<std::endl;
+        }
         // TODO : CREATE IMAGES FOLDER AND INSTALL IT THROUGH CMake
         std::string image_filename = ament_index_cpp::get_package_share_directory("turtle_calibration");
         image_filename = image_filename + "/images/image" + std::to_string(camera_index) + ".jpg";
