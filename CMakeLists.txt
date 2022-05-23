@@ -39,6 +39,26 @@ ament_target_dependencies(lidar_camera_project rclcpp rosbag2_cpp rosbag2_storag
 install(TARGETS lidar_camera_project 
         DESTINATION lib/${PROJECT_NAME})
 
+
+add_executable(projection src/camera_lidar_projection.cpp)
+target_link_libraries(projection calibration)
+ament_target_dependencies(projection rosbag2_cpp rosbag2_storage rcutils sensor_msgs)
+
+install(TARGETS projection
+        DESTINATION lib/${PROJECT_NAME})
+
+install(DIRECTORY
+        settings
+        images
+        rosbags
+        DESTINATION share/${PROJECT_NAME})
+# install(FILES 
+#         lidar_camera_extrinsic.ini
+#         intrinsic_params0.yaml
+#         intrinsic_params1.yaml
+#         intrinsic_params2.yaml
+#         DESTINATION share/${PROJECT_NAME})    
+
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
   # the following line skips the linter which checks for copyrights
