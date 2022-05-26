@@ -110,8 +110,8 @@ void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
 
 
     for(int i=0; i<CAMERA_N; i++){
-        // std::string filename = "/home/minakosm/turtle_ws/src/turtle_calibration/images/image" + std::to_string(i) + ".jpg";
-        std::string filename = "/home/minakosm/lidar_snapshot_test/" + std::to_string(i) + ".jpg";
+        std::string filename = "/home/minakosm/turtle_ws/src/turtle_calibration/images/image" + std::to_string(i) + ".jpg";
+        // std::string filename = "/home/minakosm/lidar_snapshot_test/" + std::to_string(i) + ".jpg";
 
         cv::Mat img = cv::imread(filename);
         if(img.empty()) {
@@ -147,9 +147,9 @@ void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
         }
 
         Eigen::Matrix<float, 3, 3> rot;
-        rot<<0, 0, 1,
-             -1, 0, 0,
-             0, -1, 0;
+        rot<<0, -1, 0,
+             0, 0, -1,
+             1, 0, 0;
 
         Eigen::Matrix<float, 3, 4> intrinsic;
         intrinsic << intrinsic_K, Eigen::Vector3f::Zero();
@@ -157,16 +157,15 @@ void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
         Eigen::MatrixXf rotationEigen;
         cv::Mat rotationCV;
         cv::Vec3f rvec;
-        cv::Vec3f tvec(0, 0, 0);
+        cv::Vec3f tvec(0,0,0);
         cv::Mat camMat;
         cv::Mat distMat;
         std::vector<cv::Point2f> imgPoints(obj_points.size());
         
         rotationEigen.resize(3,3);
-        rotationEigen =  rot * rotMat;
+        rotationEigen = rotMat * rot;
 
         cv::eigen2cv(rotationEigen ,rotationCV);
-        
         cv::Rodrigues(rotationCV, rvec);
 
         std::cout<<"rvec = "<<rvec<<std::endl;
@@ -200,7 +199,7 @@ void transform_pointcloud(sensor_msgs::msg::PointCloud2 pclMsg){
                     norm_intensity = (intensities(k,0) - min_intensity) / (max_intensity - min_intensity);
                     final_c = (norm_intensity * min_color) + (1-norm_intensity)*max_color;
 
-                    img.at<cv::Vec3b>(imgPoints[k]) = final_c;
+                    img.at<cv::Vec3b>(imgPoints[k].y, imgPoints[k].x) = final_c;
 
                     for(int m=1; m<4; m++){
                         for(int n=1; n<4; n++){

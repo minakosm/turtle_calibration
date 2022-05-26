@@ -1,5 +1,6 @@
 #include <memory>
 #include <stdio.h>
+#include <fstream>
 
 // Yaml library for yaml file parsing
 #include "yaml-cpp/yaml.h"
@@ -36,7 +37,7 @@
 #include "rclcpp/serialized_message.hpp"
 
 #ifndef PI
-#define PI 3.14159
+#define PI 3.14159265359
 #endif
 
 #define CAMERA_N 3  // Number of Cameras
@@ -49,9 +50,9 @@ Eigen::MatrixXf camera_3d_points;           // [x_c y_c z_c] 3d points described
 Eigen::MatrixXf pixel_points;               // [u v w] homeogenous pixel points
 
 Eigen::Matrix3f intrinsic_K;                // Camera Matrix 
-Eigen::Array<float, 1, 5> intrinsic_D;      // Distortion Coefficients
+Eigen::Matrix<float, 1, 5> intrinsic_D;      // Distortion Coefficients
 
-int camera_index;
+int camera_index;                           // Camera enum (0:left, 1:center, 2:right)
 
 /**
  * @brief Get the pointcloud2 msg from rosbag object
@@ -118,14 +119,19 @@ std::pair<Eigen::MatrixXf, Eigen::VectorXf> get_lidar_XYZ_intensities(sensor_msg
     intensities.resize(pcl_size);
 
     for(int i=0; i<pcl_size; i++){
-        lidar_xyz(0,i) = *((float*)(ptr + i*pcl_msg.point_step)); // X
-        lidar_xyz(1,i) = *((float*)(ptr + i*pcl_msg.point_step)); // Y
-        lidar_xyz(2,i) = *((float*)(ptr + i*pcl_msg.point_step)); // Z
-        lidar_xyz(3,i) = 1;                                       // Homogenous 1  
+
+        lidar_xyz(0,i) = *((float*)(ptr + i*pcl_msg.point_step));       // X
+        lidar_xyz(1,i) = *((float*)(ptr + i*pcl_msg.point_step + 4));   // Y
+        lidar_xyz(2,i) = *((float*)(ptr + i*pcl_msg.point_step + 8));   // Z
+        lidar_xyz(3,i) = 1;                                             // Homogenous 1  
 
         intensities(i) = *((float*)(ptr + i*pcl_msg.point_step + 16));  // LiDAR intensitites
     }
 
+    std::ofstream file_lidar("lidar_xyz.txt");
+    if(file_lidar.is_open()){
+        file_lidar << "lidar_xyz:\n" <<lidar_xyz.transpose()<<"\n";
+    }
     return std::make_pair(lidar_xyz, intensities);
 
 }
@@ -134,9 +140,9 @@ std::pair<Eigen::MatrixXf, Eigen::VectorXf> get_lidar_XYZ_intensities(sensor_msg
  * @brief Returns the camera matrix (K) and the distortion coefficients (D) of each camera, from a yaml file
  * 
  * @param camera_index Camera index : 0->left, 1->center, 2->right
- * @return std::pair<Eigen::Matrix3f, Eigen::Array<float, 1, 5>> 
+ * @return std::pair<Eigen::Matrix3f, Eigen::Matrix<float, 1, 5>> 
  */
-std::pair<Eigen::Matrix3f, Eigen::Array<float, 1, 5>> read_intrinsic_params(int camera_index){
+std::pair<Eigen::Matrix3f, Eigen::Matrix<float, 1, 5>> read_intrinsic_params(int camera_index){
 
 
     // TODO : INSTALL /settings folder
@@ -170,6 +176,7 @@ std::pair<Eigen::Matrix3f, Eigen::Array<float, 1, 5>> read_intrinsic_params(int 
         }
 
     }
+
     return std::make_pair(intrinsic_K, intrinsic_D);
 }
 
@@ -211,16 +218,15 @@ Eigen::MatrixXf get_transformation_matrix(std::string filename){
                           t_y, 
                           t_z;
 
+    std::cout<<"[roll pitch yaw] =" <<roll<<" "<<pitch<<" "<<yaw<<std::endl;
+
     rotation_matrix = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX())
                       *Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY())
                       *Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
 
     transformation_matrix.resize(4,4);
-    transformation_matrix << rotation_matrix, translation_vector,
+    transformation_matrix << rotation_matrix.inverse(), -translation_vector,
                              Eigen::Matrix<float, 1, 3>::Zero(), 1;
-
-    std::cout<<"Transformation matrix = "<<std::endl;
-    std::cout<<transformation_matrix<<std::endl;
 
     return transformation_matrix;
 }
@@ -232,7 +238,6 @@ Eigen::MatrixXf get_transformation_matrix(std::string filename){
  * @return Eigen::MatrixXf 
  */
 
-// TODO : install in /settings folder through CMAKE
 Eigen::MatrixXf get_camera_3d_points(Eigen::MatrixXf lidar_xyz){
     Eigen::MatrixXf transformation_matrix;
     std::string filename = ament_index_cpp::get_package_share_directory("turtle_calibration");
@@ -246,6 +251,18 @@ Eigen::MatrixXf get_camera_3d_points(Eigen::MatrixXf lidar_xyz){
     return camera_3d_points;
 }
 
+void write_matrices(Eigen::Matrix3f intrinsic_K, Eigen::MatrixXf camera_3d_points, Eigen::MatrixXf pixel_homeogenous_points, Eigen::MatrixXf lidar_xyz){
+    std::ofstream file_c("camera_3d.txt");
+    std::ofstream file_p("pixel_points.txt");
+    int counter =0;
+    if (file_c.is_open() && file_p.is_open())
+    {
+        // file << "intrinsic_K:\n"<<intrinsic_K<<"\n";
+        file_c << "camera_3d_points:\n"<<camera_3d_points.transpose()<<"\n";
+        file_p << "pixel_homeogenous_points:\n"<<pixel_homeogenous_points.transpose()<<"\n";
+    }
+    
+}
 /**
  * @brief Calculate the cprrespondent pixel points (u,v) in the given camera frame from the 3D camera object points 
  * 
@@ -259,24 +276,32 @@ Eigen::MatrixXf get_pixel_points(Eigen::MatrixXf camera_3d_points, Eigen::Matrix
 
     Eigen::MatrixXf pixel_homeogenous_points;
 
-    opencv_rotation << 0, 0, 1,
-                      -1, 0, 0,
-                       0, -1, 0;
+    opencv_rotation = Eigen::AngleAxisf(PI/2,Eigen::Vector3f::UnitY())
+                     *Eigen::AngleAxisf(-PI/2,Eigen::Vector3f::UnitZ());
+
+    std::cout<<"OPENCV_ROTATION = "<<std::endl<<opencv_rotation<<std::endl;
+    std::cout<<"OPENCV_INVERSE_ROTATION = "<<std::endl<<opencv_rotation.inverse()<<std::endl;
 
     opencv_transformation_matrix.resize(3,4);
-    opencv_transformation_matrix << opencv_rotation, Eigen::Vector3f::Zero();
+    opencv_transformation_matrix << opencv_rotation.inverse(), Eigen::Vector3f::Zero();
+
+    std::cout<<"OPENCV_TRANSFORM = "<<std::endl<<opencv_transformation_matrix<<std::endl;
 
     pixel_homeogenous_points.resize(3, camera_3d_points.cols());
-    pixel_homeogenous_points = intrinsic_K *opencv_transformation_matrix * camera_3d_points;
+
+    pixel_homeogenous_points = intrinsic_K*opencv_transformation_matrix*camera_3d_points;
 
     for(int i=0; i<pixel_homeogenous_points.cols(); i++){
         pixel_homeogenous_points(0,i) = pixel_homeogenous_points(0,i)/pixel_homeogenous_points(2,i);
-        pixel_homeogenous_points(1,i) = pixel_homeogenous_points(0,i)/pixel_homeogenous_points(2,i);
-        pixel_homeogenous_points(2,i) = 1;
+        pixel_homeogenous_points(1,i) = pixel_homeogenous_points(1,i)/pixel_homeogenous_points(2,i);
+        pixel_homeogenous_points(2,i) = pixel_homeogenous_points(2,i)/pixel_homeogenous_points(2,i);
     }
 
+    // Function for debugging purposes 
+    write_matrices(intrinsic_K, camera_3d_points,pixel_homeogenous_points, lidar_xyz);
     return pixel_homeogenous_points;
 }
+
 
 /**
  * @brief Process the image and project the 3d LiDAR points on the image plane
@@ -290,23 +315,36 @@ void image_processing(std::string image_filename,Eigen::MatrixXf pixel_points){;
     cv::Mat img;
     img = cv::imread(image_filename);
     
-    cv::Rect2f boundaries(0,0,img.cols,img.rows);
-
+    cv::Rect2f boundaries(0,0,img.cols,img.rows); 
+    std::cout<<"Boundaries = " <<boundaries<<std::endl;
     std::vector<cv::Point2f> px(pixel_points.cols());
 
+    float min_color = 1;
+    float max_color = 255;
+
+    float min_z = lidar_xyz.row(lidar_xyz.rows()-2).minCoeff();
+    float max_z = lidar_xyz.row(lidar_xyz.rows()-2).maxCoeff();
+
+    std::cout<<"Z value range = ["<<min_z<<", "<<max_z<<"]"<<std::endl;
+    
+
     for(int i=0; i<px.size(); i++){
-        px[i].x = pixel_points(1,i);
-        px[i].y = pixel_points(0,i);
+        px[i].x = pixel_points(0,i);
+        px[i].y = pixel_points(1,i); 
 
         if(px[i].inside(boundaries)){
-            img.at<cv::viz::Color>(px[i].y, px[i].x) = cv::viz::Color::red();
+            img.at<cv::Vec3b>(px[i].y, px[i].x) = 15; 
+
+            float norm = (lidar_xyz(2,i) - min_z )/(max_z - min_z);
+            float norm_color = min_color*norm + max_color*(1-norm);
+
             for(int m=1; m<4; m++){
                     for(int n=1; n<4; n++){
                         if(px[i].x+m+n<img.cols && px[i].y+m+n<img.rows){
-                            img.at<cv::viz::Color>(px[i].y, px[i].x+n) = cv::viz::Color::red();
-                            img.at<cv::viz::Color>(px[i].y+n, px[i].x) = cv::viz::Color::red();
-                            img.at<cv::viz::Color>(px[i].y+n, px[i].x+m) = cv::viz::Color::red();
-                            img.at<cv::viz::Color>(px[i].y+m, px[i].x+n) = cv::viz::Color::red();
+                            img.at<cv::Vec3b>(px[i].y, px[i].x+n) = norm_color;
+                            img.at<cv::Vec3b>(px[i].y+n, px[i].x) = norm_color;
+                            img.at<cv::Vec3b>(px[i].y+n, px[i].x+m) = norm_color;
+                            img.at<cv::Vec3b>(px[i].y+m, px[i].x+n) = norm_color;
                         }
                         }
                     }
@@ -335,17 +373,10 @@ int main(int argc, char* argv[]){
     for(camera_index=0; camera_index<CAMERA_N; camera_index++){
     
         auto intrinsic_params = read_intrinsic_params(camera_index);
-        auto camera_points = get_camera_3d_points(lidar_points.first);  
+        auto camera_points = get_camera_3d_points(lidar_xyz);  
 
         auto pixel_points = get_pixel_points(camera_points, intrinsic_params.first);       
 
-        for(int i=0; i<pixel_points.size(); i++){
-            std::cout<<"px[ 0, "<<i<<"] = "<<pixel_points(0,i)<<std::endl;
-            std::cout<<"------------"<<std::endl;
-
-            std::cout<<"px[ 1, "<<i<<"] = "<<pixel_points(1,i)<<std::endl;
-            std::cout<<"------------"<<std::endl;
-        }
         // TODO : CREATE IMAGES FOLDER AND INSTALL IT THROUGH CMake
         std::string image_filename = ament_index_cpp::get_package_share_directory("turtle_calibration");
         image_filename = image_filename + "/images/image" + std::to_string(camera_index) + ".jpg";
