@@ -53,7 +53,8 @@ Eigen::Matrix3f intrinsic_K;                // Camera Matrix
 Eigen::Matrix<float, 1, 5> intrinsic_D;      // Distortion Coefficients
 
 int camera_index;                           // Camera enum (0:left, 1:center, 2:right)
-
+enum scenery{chessboard, cones};           // Scenery enumerator : chessboard = 0, cones = 1
+scenery scene = chessboard;
 /**
  * @brief Get the pointcloud2 msg from rosbag object
  * 
@@ -63,6 +64,7 @@ int camera_index;                           // Camera enum (0:left, 1:center, 2:
 sensor_msgs::msg::PointCloud2 get_pcl_from_rosbag(std::string filename){
     rosbag2_storage::StorageOptions storage_options;
 
+    if(filename == "lidar_bag_cones"){scene = cones;}
     std::string rosbag_filename = ament_index_cpp::get_package_share_directory("turtle_calibration");
     rosbag_filename = rosbag_filename +"/rosbags/" + filename;
     storage_options.uri = rosbag_filename;
@@ -377,9 +379,20 @@ int main(int argc, char* argv[]){
 
         auto pixel_points = get_pixel_points(camera_points, intrinsic_params.first);       
 
-        // TODO : CREATE IMAGES FOLDER AND INSTALL IT THROUGH CMake
         std::string image_filename = ament_index_cpp::get_package_share_directory("turtle_calibration");
-        image_filename = image_filename + "/images/image" + std::to_string(camera_index) + ".jpg";
+
+        switch (scene)
+        {
+        case 0:
+            image_filename = image_filename + "/images/image_chessboard" + std::to_string(camera_index) + ".jpg";
+            break;
+        case 1:
+            image_filename = image_filename + "/images/image_cones" + std::to_string(camera_index) + ".jpg";
+        default:
+            break;
+        }
+
+
 
         image_processing(image_filename, pixel_points);
     }
