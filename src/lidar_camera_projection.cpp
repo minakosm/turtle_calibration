@@ -300,7 +300,8 @@ Eigen::MatrixXf get_pixel_points(Eigen::MatrixXf camera_3d_points, Eigen::Matrix
     }
 
     // Function for debugging purposes 
-    write_matrices(intrinsic_K, camera_3d_points,pixel_homeogenous_points, lidar_xyz);
+    // write_matrices(intrinsic_K, camera_3d_points,pixel_homeogenous_points, lidar_xyz);
+    
     return pixel_homeogenous_points;
 }
 
@@ -321,8 +322,8 @@ void image_processing(std::string image_filename,Eigen::MatrixXf pixel_points){;
     std::cout<<"Boundaries = " <<boundaries<<std::endl;
     std::vector<cv::Point2f> px(pixel_points.cols());
 
-    float min_color = 1;
-    float max_color = 255;
+    cv::Vec3b min_color(0,255,0);
+    cv::Vec3b max_color(255,0,255);
 
     float min_z = lidar_xyz.row(lidar_xyz.rows()-2).minCoeff();
     float max_z = lidar_xyz.row(lidar_xyz.rows()-2).maxCoeff();
@@ -338,7 +339,7 @@ void image_processing(std::string image_filename,Eigen::MatrixXf pixel_points){;
             img.at<cv::Vec3b>(px[i].y, px[i].x) = 15; 
 
             float norm = (lidar_xyz(2,i) - min_z )/(max_z - min_z);
-            float norm_color = min_color*norm + max_color*(1-norm);
+            cv::Vec3b norm_color = min_color*norm + max_color*(1-norm);
 
             for(int m=1; m<4; m++){
                     for(int n=1; n<4; n++){

@@ -40,7 +40,7 @@ install(TARGETS lidar_camera_project
         DESTINATION lib/${PROJECT_NAME})
 
 
-add_executable(projection src/camera_lidar_projection.cpp)
+add_executable(projection src/lidar_camera_projection.cpp)
 target_link_libraries(projection calibration)
 ament_target_dependencies(projection rosbag2_cpp rosbag2_storage rcutils sensor_msgs)
 
