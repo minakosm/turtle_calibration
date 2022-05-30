@@ -32,19 +32,11 @@ target_link_libraries(calibration ${YAML_CPP_LIBRARIES})
 target_link_libraries(calibration ${OpenCV_LIBRARIES})
 ament_target_dependencies(calibration rclcpp std_msgs sensor_msgs ament_index_cpp tf2_ros)
 
-add_executable(lidar_camera_project src/main.cpp)
-target_link_libraries(lidar_camera_project calibration)
-ament_target_dependencies(lidar_camera_project rclcpp rosbag2_cpp rosbag2_storage rcutils sensor_msgs)
+add_executable(lc_calibration src/lidar_camera_calibration.cpp)
+target_link_libraries(lc_calibration calibration)
+ament_target_dependencies(lc_calibration rclcpp rosbag2_cpp rosbag2_storage rcutils sensor_msgs)
 
-install(TARGETS lidar_camera_project 
-        DESTINATION lib/${PROJECT_NAME})
-
-
-add_executable(projection src/lidar_camera_projection.cpp)
-target_link_libraries(projection calibration)
-ament_target_dependencies(projection rosbag2_cpp rosbag2_storage rcutils sensor_msgs)
-
-install(TARGETS projection
+install(TARGETS lc_calibration
         DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY
