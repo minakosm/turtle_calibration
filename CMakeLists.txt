@@ -20,23 +20,18 @@ find_package(rosbag2_storage REQUIRED)
 find_package(rcutils REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_msgs REQUIRED)
-
+find_package(PCL REQUIRED QUIET COMPONENTS core common features filters io segmentation surface)
+find_package(pcl_conversions REQUIRED)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
                     ${OpenCV_INCLUDE_DIRS}
                     ${YAML_CPP_INCLUDE_DIRS})
 
-add_library(calibration src/projectPointcloud.cpp)
-target_link_libraries(calibration Eigen3::Eigen)
-target_link_libraries(calibration ${YAML_CPP_LIBRARIES})
-target_link_libraries(calibration ${OpenCV_LIBRARIES})
-ament_target_dependencies(calibration rclcpp std_msgs sensor_msgs ament_index_cpp tf2_ros)
+add_executable(ros2bag_to_pcd src/ros2bag_to_pcd.cpp)
+target_link_libraries(ros2bag_to_pcd Eigen3::Eigen ${YAML_CPP_LIBRARIES} ${OpenCV_LIBRARIES} ${PCL_LIBRARIES})
+ament_target_dependencies(ros2bag_to_pcd rclcpp std_msgs ament_index_cpp tf2_ros rosbag2_cpp rosbag2_storage rcutils sensor_msgs pcl_conversions PCL)
 
-add_executable(lc_calibration src/lidar_camera_calibration.cpp)
-target_link_libraries(lc_calibration calibration)
-ament_target_dependencies(lc_calibration rclcpp rosbag2_cpp rosbag2_storage rcutils sensor_msgs)
-
-install(TARGETS lc_calibration
+install(TARGETS ros2bag_to_pcd
         DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY
