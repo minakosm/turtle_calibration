@@ -26,19 +26,11 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
                     ${OpenCV_INCLUDE_DIRS}
                     ${YAML_CPP_INCLUDE_DIRS})
 
-add_library(calibration src/projectPointcloud.cpp)
+add_library(calibration src/lidar_camera_projection.cpp)
 target_link_libraries(calibration Eigen3::Eigen)
 target_link_libraries(calibration ${YAML_CPP_LIBRARIES})
 target_link_libraries(calibration ${OpenCV_LIBRARIES})
 ament_target_dependencies(calibration rclcpp std_msgs sensor_msgs ament_index_cpp tf2_ros)
-
-add_executable(lidar_camera_project src/main.cpp)
-target_link_libraries(lidar_camera_project calibration)
-ament_target_dependencies(lidar_camera_project rclcpp rosbag2_cpp rosbag2_storage rcutils sensor_msgs)
-
-install(TARGETS lidar_camera_project 
-        DESTINATION lib/${PROJECT_NAME})
-
 
 add_executable(projection src/lidar_camera_projection.cpp)
 target_link_libraries(projection calibration)

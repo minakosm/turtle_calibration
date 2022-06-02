@@ -92,12 +92,10 @@ sensor_msgs::msg::PointCloud2 get_pcl_from_rosbag(std::string filename){
         auto timestamp = bag_message->time_stamp; 
 
         if (bag_message->topic_name == "/ouster/rawPointcloud") {
-            std::cout << "message" << std::endl;
             rclcpp::Serialization<sensor_msgs::msg::PointCloud2> serialization;
             sensor_msgs::msg::PointCloud2 pcl;
             rclcpp::SerializedMessage serialized_extracted_tf(*bag_message->serialized_data);
             serialization.deserialize_message(&serialized_extracted_tf, &pcl);
-            std::cout << "pcl: " << pcl.data.size() << std::endl;
 
             return pcl;
         }
@@ -220,8 +218,6 @@ Eigen::MatrixXf get_transformation_matrix(std::string filename){
                           t_y, 
                           t_z;
 
-    std::cout<<"[roll pitch yaw] =" <<roll<<" "<<pitch<<" "<<yaw<<std::endl;
-
     rotation_matrix = Eigen::AngleAxisf(roll, Eigen::Vector3f::UnitX())
                       *Eigen::AngleAxisf(pitch, Eigen::Vector3f::UnitY())
                       *Eigen::AngleAxisf(yaw, Eigen::Vector3f::UnitZ());
@@ -253,6 +249,14 @@ Eigen::MatrixXf get_camera_3d_points(Eigen::MatrixXf lidar_xyz){
     return camera_3d_points;
 }
 
+/**
+ * @brief Write the values of camera3D points and their corresponding pixel coordinates in txt files. This function serves debugging purposes
+ * 
+ * @param intrinsic_K 
+ * @param camera_3d_points 
+ * @param pixel_homeogenous_points 
+ * @param lidar_xyz 
+ */
 void write_matrices(Eigen::Matrix3f intrinsic_K, Eigen::MatrixXf camera_3d_points, Eigen::MatrixXf pixel_homeogenous_points, Eigen::MatrixXf lidar_xyz){
     std::ofstream file_c("camera_3d.txt");
     std::ofstream file_p("pixel_points.txt");
@@ -281,13 +285,8 @@ Eigen::MatrixXf get_pixel_points(Eigen::MatrixXf camera_3d_points, Eigen::Matrix
     opencv_rotation = Eigen::AngleAxisf(PI/2,Eigen::Vector3f::UnitY())
                      *Eigen::AngleAxisf(-PI/2,Eigen::Vector3f::UnitZ());
 
-    std::cout<<"OPENCV_ROTATION = "<<std::endl<<opencv_rotation<<std::endl;
-    std::cout<<"OPENCV_INVERSE_ROTATION = "<<std::endl<<opencv_rotation.inverse()<<std::endl;
-
     opencv_transformation_matrix.resize(3,4);
     opencv_transformation_matrix << opencv_rotation.inverse(), Eigen::Vector3f::Zero();
-
-    std::cout<<"OPENCV_TRANSFORM = "<<std::endl<<opencv_transformation_matrix<<std::endl;
 
     pixel_homeogenous_points.resize(3, camera_3d_points.cols());
 
@@ -305,6 +304,30 @@ Eigen::MatrixXf get_pixel_points(Eigen::MatrixXf camera_3d_points, Eigen::Matrix
     return pixel_homeogenous_points;
 }
 
+std::vector<cv::Point2f> set_pixel_pionts(Eigen::MatrixXf pixel_points, Eigen::Matrix<float, 1, 5> intrinsic_D, cv::Point2f center){
+    
+    std::vector<cv::Point2f> px(pixel_points.cols());
+
+    for(int i=0; i<pixel_points.cols(); i++){
+    
+    float x_d = pixel_points(0,i);  // distorted x coordinate
+    float y_d = pixel_points(1,i);  // distorted y coordinate
+
+    float dist = (x_d-center.x)*(x_d-center.x) + (y_d-center.y)*(y_d-center.y);
+
+    float x_corrected = x_d + (x_d-center.x)*(intrinsic_D(0)*dist +intrinsic_D(1)*pow(dist,2) + intrinsic_D(4)*pow(dist,3)) + 
+                       (intrinsic_D(2)*(dist + 2*pow(x_d-center.x,2)) + 2*intrinsic_D(3)*(x_d-center.x)*(y_d-center.y));
+
+    float y_corrected = y_d + (y_d-center.y)*(intrinsic_D(0)*dist +intrinsic_D(1)*pow(dist,2) + intrinsic_D(4)*pow(dist,3)) + 
+                       (intrinsic_D(3)*(dist + 2*pow(y_d-center.y,2)) + 2*intrinsic_D(2)*(x_d-center.x)*(y_d-center.y));
+
+    px[i].x = x_corrected;
+    px[i].y = y_corrected;
+
+    }
+
+    return px;
+}
 
 /**
  * @brief Process the image and project the 3d LiDAR points on the image plane
@@ -319,7 +342,7 @@ void image_processing(std::string image_filename,Eigen::MatrixXf pixel_points){;
     img = cv::imread(image_filename);
     
     cv::Rect2f boundaries(0,0,img.cols,img.rows); 
-    std::cout<<"Boundaries = " <<boundaries<<std::endl;
+
     std::vector<cv::Point2f> px(pixel_points.cols());
 
     cv::Vec3b min_color(0,255,0);
@@ -328,8 +351,11 @@ void image_processing(std::string image_filename,Eigen::MatrixXf pixel_points){;
     float min_z = lidar_xyz.row(lidar_xyz.rows()-2).minCoeff();
     float max_z = lidar_xyz.row(lidar_xyz.rows()-2).maxCoeff();
 
-    std::cout<<"Z value range = ["<<min_z<<", "<<max_z<<"]"<<std::endl;
-    
+    cv::Point2f center;
+    center.y = img.rows/2;
+    center.x = img.cols/2;
+
+    // px = set_pixel_pionts(pixel_points, intrinsic_D, center);
 
     for(int i=0; i<px.size(); i++){
         px[i].x = pixel_points(0,i);
