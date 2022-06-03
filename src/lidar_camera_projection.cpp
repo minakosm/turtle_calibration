@@ -243,6 +243,7 @@ Eigen::MatrixXf get_camera_3d_points(Eigen::MatrixXf lidar_xyz){
 
     transformation_matrix = get_transformation_matrix(filename);
 
+    std::cout << "Transformation Matrix = \n" << transformation_matrix<<std::endl;
     camera_3d_points.resize(4,lidar_xyz.cols());
     camera_3d_points = transformation_matrix * lidar_xyz;
 
