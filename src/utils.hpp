@@ -11,7 +11,7 @@
 sensor_msgs::msg::PointCloud2 get_pcl_from_rosbag() {
     rosbag2_storage::StorageOptions in_storage_options;
     // in_storage_options.uri = "/home/eleft/ros2_sim/src/turtle_calibration/rosbags/lidar_bag_chess";
-    in_storage_options.uri = "/home/minakosm/git_projects/SensorsCalibration/lidar2camera/manual_calib/fusion_data/lidar_bag_left_camera";
+    in_storage_options.uri = "/home/minakosm/turtle_ws/src/calibration-12-11-22/lidar_bag_2022_11_12_15-53-46(right)";
 
     in_storage_options.storage_id = "sqlite3";
     in_storage_options.max_bagfile_size = 0;  // default

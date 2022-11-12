@@ -10,6 +10,6 @@ int main(/*int argc, char* argv[]*/) {
     sensor_msgs::msg::PointCloud2 pclMsg = get_pcl_from_rosbag();
 
     // save PCD
-    pcl::io::savePCDFile("lidar.pcd", pclMsg); 
+    pcl::io::savePCDFile("lidar_right.pcd", pclMsg); 
     return 0;
 }
